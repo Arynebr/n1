@@ -29,7 +29,7 @@ last_message_count = {}
 # تنظیم Flask
 flask_app = Flask(__name__)
 
-# ترجمه‌ها (مشابه قبل)
+# ترجمه‌ها
 translations = {
     "en": {
         "welcome": "✨ *Welcome to TempMail Bot!* ✨\n\nI can create and manage temporary emails for you! Use the buttons below:",
@@ -354,6 +354,80 @@ async def admin_check_inboxes(chat_id, context: CallbackContext):
     new_message_id = await send_or_edit_message(chat_id, inbox_msg, context, get_admin_menu(chat_id), message_id)
     context.user_data["last_message_id"] = new_message_id
 
+# تابع مدیریت دکمه‌ها (Callback Queries)
+async def button(update: Update, context: CallbackContext):
+    query = update.callback_query
+    chat_id = query.message.chat_id
+    lang = user_language.get(chat_id, "en")
+    await query.answer()
+
+    if query.data == "create_email":
+        await create_email(chat_id, context)
+    elif query.data == "select_inbox":
+        msg = translations[lang]["select_inbox"] if chat_id in user_emails else translations[lang]["no_emails"]
+        message_id = context.user_data.get("last_message_id")
+        new_message_id = await send_or_edit_message(chat_id, msg, context, get_inbox_selection_menu(chat_id), message_id)
+        context.user_data["last_message_id"] = new_message_id
+    elif query.data == "show_emails":
+        msg = translations[lang]["email_list"] if chat_id in user_emails else translations[lang]["no_emails"]
+        message_id = context.user_data.get("last_message_id")
+        new_message_id = await send_or_edit_message(chat_id, msg, context, get_email_list_menu(chat_id), message_id)
+        context.user_data["last_message_id"] = new_message_id
+    elif query.data == "delete_all":
+        if chat_id in user_emails:
+            del user_emails[chat_id]
+        message_id = context.user_data.get("last_message_id")
+        new_message_id = await send_or_edit_message(chat_id, translations[lang]["deleted_all"], context, get_main_menu(chat_id), message_id)
+        context.user_data["last_message_id"] = new_message_id
+    elif query.data == "info":
+        if chat_id in user_emails and user_emails[chat_id]:
+            user_data = user_emails[chat_id][-1]
+            msg = f"ℹ️ *{'Email Info' if lang == 'en' else 'اطلاعات ایمیل'}*\n\n📧 *Email:* `{user_data['email']}`\n🔑 *Password:* `{user_data['password']}`\n⏰ *Created At:* `{user_data['created_at']}`"
+        else:
+            msg = translations[lang]["no_emails"]
+        message_id = context.user_data.get("last_message_id")
+        new_message_id = await send_or_edit_message(chat_id, msg, context, get_main_menu(chat_id), message_id)
+        context.user_data["last_message_id"] = new_message_id
+    elif query.data == "back" or query.data == "admin_exit":
+        message_id = context.user_data.get("last_message_id")
+        new_message_id = await send_or_edit_message(chat_id, translations[lang]["welcome"], context, get_main_menu(chat_id), message_id)
+        context.user_data["last_message_id"] = new_message_id
+    elif query.data.startswith("delete_"):
+        idx = int(query.data.split("_")[1])
+        if chat_id in user_emails and 0 <= idx < len(user_emails[chat_id]):
+            user_emails[chat_id].pop(idx)
+            msg = translations[lang]["email_list"] if user_emails[chat_id] else translations[lang]["no_emails"]
+            message_id = context.user_data.get("last_message_id")
+            new_message_id = await send_or_edit_message(chat_id, msg, context, get_email_list_menu(chat_id), message_id)
+            context.user_data["last_message_id"] = new_message_id
+    elif query.data.startswith("info_"):
+        idx = int(query.data.split("_")[1])
+        if chat_id in user_emails and 0 <= idx < len(user_emails[chat_id]):
+            user_data = user_emails[chat_id][idx]
+            msg = f"ℹ️ *{'Email Info' if lang == 'en' else 'اطلاعات ایمیل'}*\n\n📧 *Email:* `{user_data['email']}`\n🔑 *Password:* `{user_data['password']}`\n⏰ *Created At:* `{user_data['created_at']}`"
+            message_id = context.user_data.get("last_message_id")
+            new_message_id = await send_or_edit_message(chat_id, msg, context, get_main_menu(chat_id), message_id)
+            context.user_data["last_message_id"] = new_message_id
+    elif query.data.startswith("inbox_"):
+        idx = int(query.data.split("_")[1])
+        if chat_id in user_emails and 0 <= idx < len(user_emails[chat_id]):
+            await check_inbox(chat_id, context, idx)
+    elif query.data.startswith("copy_"):
+        idx = int(query.data.split("_")[1])
+        if chat_id in user_emails and 0 <= idx < len(user_emails[chat_id]):
+            email = user_emails[chat_id][idx]["email"]
+            await context.bot.send_message(chat_id=chat_id, text=f"`{email}`\n{'Copy this!' if lang == 'en' else 'اینو کپی کن!'}", parse_mode='Markdown')
+    elif query.data.startswith("download_"):
+        _, email_idx, message_id = query.data.split("_")
+        await download_email(chat_id, context, int(email_idx), message_id)
+    elif query.data == "change_language":
+        user_language[chat_id] = "fa" if user_language.get(chat_id, "en") == "en" else "en"
+        message_id = context.user_data.get("last_message_id")
+        new_message_id = await send_or_edit_message(chat_id, translations[user_language[chat_id]]["welcome"], context, get_main_menu(chat_id), message_id)
+        context.user_data["last_message_id"] = new_message_id
+    elif query.data == "admin_check_inboxes" and chat_id == ADMIN_CHAT_ID:
+        await admin_check_inboxes(chat_id, context)
+
 # Webhook Handler
 @flask_app.route('/webhook', methods=['POST'])
 async def webhook():
@@ -371,7 +445,7 @@ async def main():
     # ثبت Handlerها
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_panel))
-    app.add_handler(CallbackQueryHandler(button))
+    app.add_handler(CallbackQueryHandler(button))  # تابع button حالا تعریف شده
 
     # اطمینان از اینکه Application کاملاً ساخته شده
     await app.initialize()
