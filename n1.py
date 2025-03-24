@@ -452,7 +452,9 @@ async def main():
     await app.start()
 
     # تنظیم Job برای چک کردن اینباکس‌ها
-    # نیازی به چک کردن app.job_queue نیست، چون به صورت پیش‌فرض وجود داره
+    if app.job_queue is None:
+        logger.error("Job Queue is not available! Please ensure 'python-telegram-bot[job-queue]' is installed.")
+        return
     app.job_queue.run_repeating(check_inboxes_periodically, interval=300, first=10)
 
     # تنظیم Webhook
