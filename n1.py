@@ -445,16 +445,14 @@ async def main():
     # ثبت Handlerها
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_panel))
-    app.add_handler(CallbackQueryHandler(button))  # تابع button حالا تعریف شده
+    app.add_handler(CallbackQueryHandler(button))
 
     # اطمینان از اینکه Application کاملاً ساخته شده
     await app.initialize()
     await app.start()
 
     # تنظیم Job برای چک کردن اینباکس‌ها
-    if app.job_queue is None:
-        logger.error("Job Queue is None! Initializing job queue...")
-        app.job_queue = app.create_job_queue()  # ایجاد job_queue در صورت نیاز
+    # نیازی به چک کردن app.job_queue نیست، چون به صورت پیش‌فرض وجود داره
     app.job_queue.run_repeating(check_inboxes_periodically, interval=300, first=10)
 
     # تنظیم Webhook
@@ -464,6 +462,13 @@ async def main():
 
     # اجرای Flask
     flask_app.run(host="0.0.0.0", port=port)
+
+    # برای جلوگیری از asyncIO.CancelledError، مطمئن می‌شیم که اپلیکیشن به درستی متوقف بشه
+    try:
+        await asyncio.get_event_loop().run_forever()
+    finally:
+        await app.stop()
+        await app.shutdown()
 
 if __name__ == "__main__":
     asyncio.run(main())
