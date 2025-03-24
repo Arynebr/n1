@@ -430,9 +430,10 @@ async def button(update: Update, context: CallbackContext):
 
 # Webhook Handler
 @flask_app.route('/webhook', methods=['POST'])
-async def webhook():
+def webhook():
     update = Update.de_json(request.get_json(force=True), app.bot)
-    await app.process_update(update)
+    # برای پردازش آپدیت، از run_async استفاده می‌کنیم تا تابع ناهمزمان اجرا بشه
+    asyncio.run_coroutine_threadsafe(app.process_update(update), asyncio.get_event_loop())
     return '', 200
 
 # تابع اصلی
@@ -455,6 +456,7 @@ async def main():
     if app.job_queue is None:
         logger.error("Job Queue is not available! Please ensure 'python-telegram-bot[job-queue]' is installed.")
         return
+    logger.info("Job Queue is successfully set up!")
     app.job_queue.run_repeating(check_inboxes_periodically, interval=300, first=10)
 
     # تنظیم Webhook
